@@ -9,6 +9,7 @@ class Spatial_Attention_layer(nn.Block):
     '''
     compute spatial attention scores
     '''
+
     def __init__(self, **kwargs):
         super(Spatial_Attention_layer, self).__init__(**kwargs)
         with self.name_scope():
@@ -35,9 +36,9 @@ class Spatial_Attention_layer(nn.Block):
         _, num_of_vertices, num_of_features, num_of_timesteps = x.shape
 
         # defer the shape of params
-        self.W_1.shape = (num_of_timesteps, )
+        self.W_1.shape = (num_of_timesteps,)
         self.W_2.shape = (num_of_features, num_of_timesteps)
-        self.W_3.shape = (num_of_features, )
+        self.W_3.shape = (num_of_features,)
         self.b_s.shape = (1, num_of_vertices, num_of_vertices)
         self.V_s.shape = (num_of_vertices, num_of_vertices)
         for param in [self.W_1, self.W_2, self.W_3, self.b_s, self.V_s]:
@@ -55,10 +56,10 @@ class Spatial_Attention_layer(nn.Block):
 
         S = nd.dot(self.V_s.data(),
                    nd.sigmoid(product + self.b_s.data())
-                     .transpose((1, 2, 0))).transpose((2, 0, 1))
+                   .transpose((1, 2, 0))).transpose((2, 0, 1))
 
         # normalization
-        S = S - nd.max(S, axis=1, keepdims=True)
+        S = S - nd.max(S, axis=1, keepdims=True)  # 避免计算exp时数值溢出
         exp = nd.exp(S)
         S_normalized = exp / nd.sum(exp, axis=1, keepdims=True)
         return S_normalized
@@ -68,6 +69,7 @@ class cheb_conv_with_SAt(nn.Block):
     '''
     K-order chebyshev graph convolution with Spatial Attention scores
     '''
+
     def __init__(self, num_of_filters, K, cheb_polynomials, **kwargs):
         '''
         Parameters
@@ -108,16 +110,15 @@ class cheb_conv_with_SAt(nn.Block):
          num_of_features, num_of_timesteps) = x.shape
 
         self.Theta.shape = (self.K, num_of_features, self.num_of_filters)
-        self.Theta._finish_deferred_init()
+        self.Theta._finish_deferred_init()  # 动态确定权重矩阵形状，适应输入的特征维度。
 
         outputs = []
         for time_step in range(num_of_timesteps):
             # shape is (batch_size, V, F)
-            graph_signal = x[:, :, :, time_step]
+            graph_signal = x[:, :, :, time_step]  # 提取每一个时间步下的x，设为图信号
             output = nd.zeros(shape=(batch_size, num_of_vertices,
                                      self.num_of_filters), ctx=x.context)
             for k in range(self.K):
-
                 # shape of T_k is (V, V)
                 T_k = self.cheb_polynomials[k]
 
@@ -140,6 +141,7 @@ class Temporal_Attention_layer(nn.Block):
     '''
     compute temporal attention scores
     '''
+
     def __init__(self, **kwargs):
         super(Temporal_Attention_layer, self).__init__(**kwargs)
         with self.name_scope():
@@ -165,9 +167,9 @@ class Temporal_Attention_layer(nn.Block):
         _, num_of_vertices, num_of_features, num_of_timesteps = x.shape
 
         # defer shape
-        self.U_1.shape = (num_of_vertices, )
+        self.U_1.shape = (num_of_vertices,)
         self.U_2.shape = (num_of_features, num_of_vertices)
-        self.U_3.shape = (num_of_features, )
+        self.U_3.shape = (num_of_features,)
         self.b_e.shape = (1, num_of_timesteps, num_of_timesteps)
         self.V_e.shape = (num_of_timesteps, num_of_timesteps)
         for param in [self.U_1, self.U_2, self.U_3, self.b_e, self.V_e]:
@@ -185,7 +187,7 @@ class Temporal_Attention_layer(nn.Block):
 
         E = nd.dot(self.V_e.data(),
                    nd.sigmoid(product + self.b_e.data())
-                     .transpose((1, 2, 0))).transpose((2, 0, 1))
+                   .transpose((1, 2, 0))).transpose((2, 0, 1))
 
         # normailzation
         E = E - nd.max(E, axis=1, keepdims=True)
@@ -250,13 +252,13 @@ class ASTGCN_block(nn.Block):
         temporal_At = self.TAt(x)
 
         x_TAt = nd.batch_dot(x.reshape(batch_size, -1, num_of_timesteps),
-                             temporal_At)\
-                  .reshape(batch_size, num_of_vertices,
-                           num_of_features, num_of_timesteps)
+                             temporal_At) \
+            .reshape(batch_size, num_of_vertices,  # 相乘后再把x变为原来的形状
+                     num_of_features, num_of_timesteps)
 
         # cheb gcn with spatial attention
-        spatial_At = self.SAt(x_TAt)
-        spatial_gcn = self.cheb_conv_SAt(x, spatial_At)
+        spatial_At = self.SAt(x_TAt)  # 生成空间注意力矩阵
+        spatial_gcn = self.cheb_conv_SAt(x, spatial_At)  # 图卷积操作
 
         # convolution along time axis
         time_conv_output = (self.time_conv(spatial_gcn.transpose((0, 2, 1, 3)))
@@ -273,6 +275,7 @@ class ASTGCN_submodule(nn.Block):
     '''
     a module in ASTGCN
     '''
+
     def __init__(self, num_for_prediction, backbones, **kwargs):
         '''
         Parameters
@@ -322,6 +325,7 @@ class ASTGCN(nn.Block):
     '''
     ASTGCN, 3 sub-modules, for hour, day, week respectively
     '''
+
     def __init__(self, num_for_prediction, all_backbones, **kwargs):
         '''
         Parameters
